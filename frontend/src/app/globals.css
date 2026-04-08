@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ── Base styles ──────────────────────────────────── */
+body {
+  background-color: hsl(230, 25%, 8%);
+  color: hsl(0, 0%, 93%);
+  font-family: var(--font-sans);
+}
+
+/* ── Custom scrollbar ─────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(230, 15%, 25%);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(230, 15%, 35%);
+}
+
+/* ── Gradient text utility ────────────────────────── */
+.gradient-text {
+  background: linear-gradient(135deg, hsl(270, 80%, 65%), hsl(230, 85%, 60%), hsl(200, 80%, 55%));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Grid pattern background ──────────────────────── */
+.grid-pattern {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* ── Glow effect ──────────────────────────────────── */
+.glow-violet {
+  box-shadow: 0 0 60px 20px hsla(260, 80%, 55%, 0.08);
+}
+
+/* ── Pulse animation for dots ─────────────────────── */
+@keyframes pulse-slow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 2s ease-in-out infinite;
+}
