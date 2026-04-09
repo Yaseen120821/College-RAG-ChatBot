@@ -3,6 +3,7 @@ Utility functions — domain filtering, validation helpers.
 """
 
 import re
+import os
 from pathlib import Path
 from app.config import settings
 
@@ -31,19 +32,29 @@ def is_admission_related(question: str) -> bool:
 
 # ── Path helpers ─────────────────────────────────────────────────
 
+# ── Path helpers ─────────────────────────────────────────────────
+
+def init_storage():
+    """Ensure persistent render storage directories exist at runtime before FAISS starts."""
+    import os
+    os.makedirs("/var/data/db", exist_ok=True)
+    os.makedirs("/var/data/documents", exist_ok=True)
+
 def get_db_path() -> Path:
-    """Return the absolute path for Render Disk DB storage."""
+    """Return the absolute path for FAISS Vector storage."""
     return Path("/var/data/db")
 
+def get_documents_path() -> Path:
+    """Return the absolute path for uploaded PDF/text files."""
+    return Path("/var/data/documents")
 
 def get_college_db_path(college_id: str) -> Path:
-    """Return the FAISS index folder for a college."""
+    """Return the FAISS index folder for a specific college."""
     return get_db_path() / college_id
 
-
 def get_college_data_path(college_id: str) -> Path:
-    """Return the raw-documents folder for a college."""
-    return Path(settings.DATA_DIR) / college_id
+    """Return the raw-documents folder for a specific college."""
+    return get_documents_path() / college_id
 
 
 def validate_college_id(college_id: str) -> bool:

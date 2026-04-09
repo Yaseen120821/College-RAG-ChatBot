@@ -20,6 +20,10 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from app.config import settings
 from app.utils import get_college_db_path, get_college_data_path, get_db_path
+from app.rag import invalidate_cache
+
+import logging
+logger = logging.getLogger(__name__)
 
 # ── Shared embeddings instance ──────────────────────────────────
 
@@ -29,6 +33,8 @@ _embeddings = None
 def _get_embeddings() -> GoogleGenerativeAIEmbeddings:
     global _embeddings
     if _embeddings is None:
+        if not settings.GEMINI_API_KEY:
+            raise ValueError("GEMINI_API_KEY is not set.")
         _embeddings = GoogleGenerativeAIEmbeddings(
             model=settings.EMBEDDING_MODEL,
             google_api_key=settings.GEMINI_API_KEY,
@@ -79,15 +85,20 @@ async def ingest_file(college_id: str, file_path: str, filename: str) -> int:
 
     # Incremental: merge into existing index or create new
     if db_path.exists() and (db_path / "index.faiss").exists():
+        logger.info(f"[INGEST] Loading existing index for append: {db_path}")
         vectorstore = FAISS.load_local(
             str(db_path), embeddings, allow_dangerous_deserialization=True
         )
         vectorstore.add_documents(chunks)
     else:
+        logger.info(f"[INGEST] Creating new FAISS index at: {db_path}")
         db_path.mkdir(parents=True, exist_ok=True)
         vectorstore = FAISS.from_documents(chunks, embeddings)
 
     vectorstore.save_local(str(db_path))
+    invalidate_cache(college_id)  # Remove old version from loaded memory cache
+    logger.info(f"[INGEST] Saved {len(chunks)} chunks to {db_path}")
+    
     return len(chunks)
 
 
@@ -122,8 +133,11 @@ def delete_college_index(college_id: str) -> bool:
     db_path = get_college_db_path(college_id)
     data_path = get_college_data_path(college_id)
     deleted = False
+    
+    logger.info(f"[INGEST] Deleting index for college_id: {college_id}")
     if db_path.exists():
         shutil.rmtree(db_path)
+        invalidate_cache(college_id)
         deleted = True
     if data_path.exists():
         shutil.rmtree(data_path)
@@ -140,7 +154,6 @@ def list_colleges() -> List[dict]:
     colleges = []
     for entry in sorted(db_root.iterdir()):
         if entry.is_dir() and (entry / "index.faiss").exists():
-            # Count source docs
             data_dir = get_college_data_path(entry.name)
             doc_count = len(list(data_dir.glob("*"))) if data_dir.exists() else 0
             colleges.append({
@@ -153,23 +166,32 @@ def list_colleges() -> List[dict]:
 
 async def create_db(path: str = "/var/data/db", college_id: str = "college_1"):
     """
-    Creates an empty FAISS index at the specified path if it doesn't exist.
+    Intelligent initialization function. Checks if db exists.
+    If not, it checks `/var/data/documents` to perform automatic rebuild.
     """
+    logger.info(f"[STORAGE] DB Creation invoked for {college_id} at {path}")
     db_path = Path(path) / college_id
     if db_path.exists() and (db_path / "index.faiss").exists():
+        logger.info(f"[STORAGE] DB already exists at {db_path}. Skipping creation.")
         return
 
-    print(f"[INIT] Creating initial DB at {db_path}...")
-    db_path.mkdir(parents=True, exist_ok=True)
+    logger.info(f"[INIT] DB missing at {db_path}. Checking for existing documents...")
     
-    # We must have at least one document to initialize FAISS
-    from langchain.schema import Document
-    dummy_doc = Document(
-        page_content="Initial DB for Render persistent storage.",
-        metadata={"source": "system", "college_id": college_id}
-    )
+    docs_path = get_college_data_path(college_id)
+    if not docs_path.exists() or not list(docs_path.glob("*")):
+        logger.warning(f"[INIT] No documents found in {docs_path}. Skipping automatic DB creation.")
+        return
+
+    logger.info(f"[INIT] Existing documents found in {docs_path}. Initiating automatic ingestion rebuild...")
     
-    embeddings = _get_embeddings()
-    vectorstore = FAISS.from_documents([dummy_doc], embeddings)
-    vectorstore.save_local(str(db_path))
-    print(f"[INIT] DB created successfully at {db_path}")
+    # Loop over pre-existing files and ingest to bootstrap the index natively
+    for file_path in docs_path.glob("*"):
+        if file_path.is_file():
+            try:
+                # Need to read as bytes to pass through convenience ingest logic
+                await ingest_file(college_id, str(file_path), file_path.name)
+                logger.info(f"[INIT] Automatically ingested {file_path.name} into {college_id}")
+            except Exception as e:
+                logger.error(f"[INIT ERROR] Failed automatic ingestion for {file_path.name}: {e}")
+
+    logger.info(f"[INIT] Automatic initialization finished for {college_id}.")
