@@ -2,6 +2,7 @@ fastapi==0.103.2
 uvicorn[standard]==0.23.2
 pydantic==1.10.13
 python-dotenv==1.0.1
+python-multipart
 
 numpy==1.26.4
 scikit-learn==1.3.2
@@ -9,10 +10,10 @@ tqdm==4.66.1
 
 faiss-cpu==1.12.0
 
-# RAG pipeline (required by app/rag.py and app/ingest.py)
-langchain==0.0.350
-langchain-community==0.0.20
+# RAG pipeline
+langchain==0.1.20
+langchain-community==0.0.38
+langchain-text-splitters==0.0.2
+langchain-google-genai==1.0.10
 google-generativeai
 pypdf
-python-multipart
-langchain-google-genai

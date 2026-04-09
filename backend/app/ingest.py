@@ -11,28 +11,29 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
+import logging
 from pathlib import Path
-
-from langchain_community.document_loaders import PyPDFLoader, TextLoader
-from langchain_community.vectorstores import FAISS
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from typing import Any, Dict, List
 
 from app.config import settings
 from app.utils import get_college_db_path, get_college_data_path, get_db_path
-from app.rag import invalidate_cache
 
-import logging
 logger = logging.getLogger(__name__)
 
-# ── Shared embeddings instance ──────────────────────────────────
+# ── Lazy helpers ────────────────────────────────────────────────
+# All heavy ML imports happen inside functions, not at module level,
+# so that an import-time failure doesn't prevent the FastAPI app from
+# starting (Render will then show a clear runtime error instead of
+# crashing with exit code 1).
 
 _embeddings = None
+_splitter = None
 
 
-def _get_embeddings() -> GoogleGenerativeAIEmbeddings:
+def _get_embeddings():
     global _embeddings
     if _embeddings is None:
+        from langchain_google_genai import GoogleGenerativeAIEmbeddings
         if not settings.GEMINI_API_KEY:
             raise ValueError("GEMINI_API_KEY is not set.")
         _embeddings = GoogleGenerativeAIEmbeddings(
@@ -42,14 +43,17 @@ def _get_embeddings() -> GoogleGenerativeAIEmbeddings:
     return _embeddings
 
 
-# ── Text splitter ───────────────────────────────────────────────
-
-_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=settings.CHUNK_SIZE,
-    chunk_overlap=settings.CHUNK_OVERLAP,
-    length_function=len,
-    separators=["\n\n", "\n", ". ", " ", ""],
-)
+def _get_splitter():
+    global _splitter
+    if _splitter is None:
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+        _splitter = RecursiveCharacterTextSplitter(
+            chunk_size=settings.CHUNK_SIZE,
+            chunk_overlap=settings.CHUNK_OVERLAP,
+            length_function=len,
+            separators=["\n\n", "\n", ". ", " ", ""],
+        )
+    return _splitter
 
 
 # ── Public API ──────────────────────────────────────────────────
@@ -60,6 +64,10 @@ async def ingest_file(college_id: str, file_path: str, filename: str) -> int:
 
     Returns the number of chunks processed.
     """
+    from langchain_community.document_loaders import PyPDFLoader, TextLoader
+    from langchain_community.vectorstores import FAISS
+    from app.rag import invalidate_cache
+
     # Pick the correct loader
     ext = Path(filename).suffix.lower()
     if ext == ".pdf":
@@ -76,7 +84,8 @@ async def ingest_file(college_id: str, file_path: str, filename: str) -> int:
         doc.metadata["source"] = filename
         doc.metadata["college_id"] = college_id
 
-    chunks = _splitter.split_documents(documents)
+    splitter = _get_splitter()
+    chunks = splitter.split_documents(documents)
     if not chunks:
         return 0
 
@@ -98,7 +107,7 @@ async def ingest_file(college_id: str, file_path: str, filename: str) -> int:
     vectorstore.save_local(str(db_path))
     invalidate_cache(college_id)  # Remove old version from loaded memory cache
     logger.info(f"[INGEST] Saved {len(chunks)} chunks to {db_path}")
-    
+
     return len(chunks)
 
 
@@ -130,10 +139,12 @@ async def ingest_uploaded_bytes(
 
 def delete_college_index(college_id: str) -> bool:
     """Remove a college's entire FAISS index and data folder."""
+    from app.rag import invalidate_cache
+
     db_path = get_college_db_path(college_id)
     data_path = get_college_data_path(college_id)
     deleted = False
-    
+
     logger.info(f"[INGEST] Deleting index for college_id: {college_id}")
     if db_path.exists():
         shutil.rmtree(db_path)
@@ -151,7 +162,7 @@ def list_colleges() -> List[Dict[str, Any]]:
     if not db_root.exists():
         return []
 
-    colleges = []
+    colleges: List[Dict[str, Any]] = []
     for entry in sorted(db_root.iterdir()):
         if entry.is_dir() and (entry / "index.faiss").exists():
             data_dir = get_college_data_path(entry.name)
@@ -176,14 +187,14 @@ async def create_db(path: str = "/var/data/db", college_id: str = "college_1"):
         return
 
     logger.info(f"[INIT] DB missing at {db_path}. Checking for existing documents...")
-    
+
     docs_path = get_college_data_path(college_id)
     if not docs_path.exists() or not list(docs_path.glob("*")):
         logger.warning(f"[INIT] No documents found in {docs_path}. Skipping automatic DB creation.")
         return
 
     logger.info(f"[INIT] Existing documents found in {docs_path}. Initiating automatic ingestion rebuild...")
-    
+
     # Loop over pre-existing files and ingest to bootstrap the index natively
     for file_path in docs_path.glob("*"):
         if file_path.is_file():

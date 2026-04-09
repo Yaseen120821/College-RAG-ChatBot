@@ -3,10 +3,8 @@ RAG query engine — retrieval + Gemini LLM generation.
 """
 from __future__ import annotations
 
-from langchain_community.vectorstores import FAISS
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
+import logging
+from typing import Any, Dict, List
 
 from app.config import settings
 from app.utils import (
@@ -16,6 +14,12 @@ from app.utils import (
     REJECTION_RESPONSE,
     FALLBACK_RESPONSE,
 )
+
+logger = logging.getLogger(__name__)
+
+# ── Lazy imports ────────────────────────────────────────────────
+# Heavy ML libraries are imported lazily inside functions to prevent
+# import-time crashes if a dependency is misconfigured.
 
 # ── System prompt ───────────────────────────────────────────────
 
@@ -39,23 +43,30 @@ Question: {question}
 
 Answer:"""
 
-_PROMPT = PromptTemplate(
-    template=_SYSTEM_TEMPLATE,
-    input_variables=["context", "question"],
-)
 
 # ── Cached components ───────────────────────────────────────────
 
+_prompt = None
 _embeddings = None
 _llm = None
-_vectorstores_cache = {}
+_vectorstores_cache: Dict[str, Any] = {}
 
-import logging
-logger = logging.getLogger(__name__)
 
-def _get_embeddings() -> GoogleGenerativeAIEmbeddings:
+def _get_prompt():
+    global _prompt
+    if _prompt is None:
+        from langchain.prompts import PromptTemplate
+        _prompt = PromptTemplate(
+            template=_SYSTEM_TEMPLATE,
+            input_variables=["context", "question"],
+        )
+    return _prompt
+
+
+def _get_embeddings():
     global _embeddings
     if _embeddings is None:
+        from langchain_google_genai import GoogleGenerativeAIEmbeddings
         if not settings.GEMINI_API_KEY:
             raise ValueError("GEMINI_API_KEY is not set.")
         _embeddings = GoogleGenerativeAIEmbeddings(
@@ -65,9 +76,10 @@ def _get_embeddings() -> GoogleGenerativeAIEmbeddings:
     return _embeddings
 
 
-def _get_llm() -> ChatGoogleGenerativeAI:
+def _get_llm():
     global _llm
     if _llm is None:
+        from langchain_google_genai import ChatGoogleGenerativeAI
         if not settings.GEMINI_API_KEY:
             raise ValueError("GEMINI_API_KEY is not set.")
         _llm = ChatGoogleGenerativeAI(
@@ -92,6 +104,9 @@ async def query(college_id: str, question: str) -> Dict[str, Any]:
             "answered": bool   # False if fallback/rejection
         }
     """
+    from langchain_community.vectorstores import FAISS
+    from langchain.chains import RetrievalQA
+
     # 1. Domain filter — fast rejection without LLM call
     if not is_admission_related(question):
         return {
@@ -108,17 +123,17 @@ async def query(college_id: str, question: str) -> Dict[str, Any]:
         logger.info(f"[RAG] Using cached FAISS index for {college_id}")
         vectorstore = _vectorstores_cache[college_id]
     else:
-        logger.info(f"[RAG] Loading FAISS index from disk for {college_id} at /var/data/db")
-        
-        # Load from /var/data/db
+        logger.info(f"[RAG] Loading FAISS index from disk for {college_id}")
+
+        # Load from persistent storage
         if not db_path.exists() or not (db_path / "index.faiss").exists():
             logger.warning(f"[STORAGE ERROR] DB path missing ({db_path}). Attempting initialization.")
             from app.ingest import create_db
             try:
-                await create_db(path="/var/data/db", college_id=college_id)
+                await create_db(path=str(get_db_path()), college_id=college_id)
             except Exception as e:
                 logger.error(f"[RAG] Error creating DB: {e}")
-        
+
         # Check again if initialization succeeded
         if db_path.exists() and (db_path / "index.faiss").exists():
             try:
@@ -132,7 +147,7 @@ async def query(college_id: str, question: str) -> Dict[str, Any]:
                 logger.info(f"[STORAGE] Rebuilding DB automatically for {college_id}...")
                 delete_college_index(college_id)
                 try:
-                    await create_db(path="/var/data/db", college_id=college_id)
+                    await create_db(path=str(get_db_path()), college_id=college_id)
                     if db_path.exists() and (db_path / "index.faiss").exists():
                         vectorstore = FAISS.load_local(
                             str(db_path), embeddings, allow_dangerous_deserialization=True
@@ -166,7 +181,7 @@ async def query(college_id: str, question: str) -> Dict[str, Any]:
         chain_type="stuff",
         retriever=retriever,
         return_source_documents=True,
-        chain_type_kwargs={"prompt": _PROMPT},
+        chain_type_kwargs={"prompt": _get_prompt()},
     )
 
     # 4. Run the chain

@@ -12,21 +12,22 @@ from __future__ import annotations
 
 import traceback
 import logging
+from typing import List
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from typing import List
 
+# Safe imports — these modules are designed not to crash at import time
 from app.config import settings
-from app.rag import query as rag_query
-from app.ingest import ingest_uploaded_bytes, delete_college_index, list_colleges
 from app.utils import validate_college_id, get_db_path, init_storage
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+print("Server starting...")
 
 # ── App ─────────────────────────────────────────────────────────
 
@@ -40,22 +41,28 @@ app = FastAPI(
 async def startup_event():
     """First-Time Initialization Logic for Render Disk Deployment."""
     logger.info("[STARTUP] Executing init_storage() macro...")
-    init_storage()
-    
-    db_root = get_db_path()
-    logger.info(f"[STARTUP] Environment paths - DB: {db_root}, DATA: /var/data/documents")
-    
-    if not db_root.exists():
-        logger.info(f"[STARTUP] Render Disk DB path '{db_root}' missing. Triggering auto-ingestion...")
-        from app.ingest import create_db
-        try:
-            # Create a default DB structure so that RAG queries do not crash on first load
-            await create_db(path=str(db_root), college_id="college_1")
-            logger.info("[STARTUP] Auto-ingestion complete.")
-        except Exception as e:
-            logger.error(f"[STARTUP] Error creating initial DB: {e}")
-    else:
-        logger.info(f"[STARTUP] Render Disk DB path '{db_root}' exists. Ready to serve.")
+    try:
+        init_storage()
+    except Exception as e:
+        logger.error(f"[STARTUP] init_storage failed: {e}")
+
+    try:
+        db_root = get_db_path()
+        logger.info(f"[STARTUP] DB root: {db_root}")
+
+        if not db_root.exists():
+            logger.info(f"[STARTUP] DB path '{db_root}' missing. Triggering auto-ingestion...")
+            from app.ingest import create_db
+            try:
+                await create_db(path=str(db_root), college_id="college_1")
+                logger.info("[STARTUP] Auto-ingestion complete.")
+            except Exception as e:
+                logger.error(f"[STARTUP] Error creating initial DB: {e}")
+        else:
+            logger.info(f"[STARTUP] DB path '{db_root}' exists. Ready to serve.")
+    except Exception as e:
+        logger.error(f"[STARTUP] Startup initialization error: {e}")
+        logger.error(traceback.format_exc())
 
 # ── CORS ────────────────────────────────────────────────────────
 
@@ -71,8 +78,8 @@ app.add_middleware(
 
 
 class ChatRequest(BaseModel):
-    college_id: str = Field(..., min_length=1, max_length=64, example="college_1")
-    question: str = Field(..., min_length=1, max_length=2000, example="What is the fee for B.Tech?")
+    college_id: str = Field(..., min_length=1, max_length=64)
+    question: str = Field(..., min_length=1, max_length=2000)
 
 
 class ChatResponse(BaseModel):
@@ -104,8 +111,8 @@ class CollegeInfo(BaseModel):
 
 @app.get("/", tags=["System"])
 def root():
-    """Root endpoint for Render port detection."""
-    return {"status": "ok"}
+    """Root endpoint for Render port detection and health check."""
+    return {"status": "running"}
 
 
 @app.get("/health", response_model=HealthResponse, tags=["System"])
@@ -128,6 +135,7 @@ async def chat(request: ChatRequest):
         raise HTTPException(status_code=503, detail="Gemini API key is missing. Set GEMINI_API_KEY in environment.")
 
     try:
+        from app.rag import query as rag_query
         result = await rag_query(request.college_id, request.question.strip())
         logger.info(f"[CHAT] Request processed successfully for {request.college_id}")
         return ChatResponse(**result)
@@ -166,6 +174,7 @@ async def ingest_documents(
 
         file_bytes = await upload_file.read()
         try:
+            from app.ingest import ingest_uploaded_bytes
             chunks = await ingest_uploaded_bytes(college_id, file_bytes, upload_file.filename)
             logger.info(f"[INGEST] Processed {chunks} chunks from {upload_file.filename}")
         except Exception as e:
@@ -192,6 +201,7 @@ async def delete_index(college_id: str):
     if not validate_college_id(college_id):
         raise HTTPException(status_code=400, detail="Invalid college_id format.")
 
+    from app.ingest import delete_college_index
     deleted = delete_college_index(college_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="No data found for this college.")
@@ -202,4 +212,5 @@ async def delete_index(college_id: str):
 @app.get("/colleges", response_model=List[CollegeInfo], tags=["Colleges"])
 async def get_colleges():
     """List all colleges that have ingested documents."""
+    from app.ingest import list_colleges
     return list_colleges()
