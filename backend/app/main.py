@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 # Safe imports — these modules are designed not to crash at import time
 from app.config import settings
-from app.utils import validate_college_id, get_db_path, init_storage
+from app.utils import validate_college_id
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -39,27 +39,23 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def startup_event():
-    """First-Time Initialization Logic for Render Disk Deployment."""
-    logger.info("[STARTUP] Executing init_storage() macro...")
-    try:
-        init_storage()
-    except Exception as e:
-        logger.error(f"[STARTUP] init_storage failed: {e}")
+    """Build FAISS indexes in memory from Supabase on startup to avoid startup delays for the first user."""
+    from app.ingest import list_colleges, create_db
+    from app.rag import _vectorstores_cache
 
+    logger.info("[STARTUP] Initializing RAG memory cache from Supabase...")
     try:
-        db_root = get_db_path()
-        logger.info(f"[STARTUP] DB root: {db_root}")
-
-        if not db_root.exists():
-            logger.info(f"[STARTUP] DB path '{db_root}' missing. Triggering auto-ingestion...")
-            from app.ingest import create_db
-            try:
-                await create_db(path=str(db_root), college_id="college_1")
-                logger.info("[STARTUP] Auto-ingestion complete.")
-            except Exception as e:
-                logger.error(f"[STARTUP] Error creating initial DB: {e}")
+        colleges = list_colleges()
+        if not colleges:
+            logger.info("[STARTUP] No documents found in Supabase. Awaiting ingress.")
         else:
-            logger.info(f"[STARTUP] DB path '{db_root}' exists. Ready to serve.")
+            for college in colleges:
+                cid = college["id"]
+                logger.info(f"[STARTUP] Building FAISS for {cid}...")
+                vectorstore = await create_db(college_id=cid)
+                if vectorstore:
+                    _vectorstores_cache[cid] = vectorstore
+            logger.info("[STARTUP] RAG caching complete.")
     except Exception as e:
         logger.error(f"[STARTUP] Startup initialization error: {e}")
         logger.error(traceback.format_exc())

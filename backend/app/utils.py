@@ -34,33 +34,7 @@ def is_admission_related(question: str) -> bool:
     return _BLOCKED_RE.search(question) is None
 
 
-# ── Path helpers ─────────────────────────────────────────────────
-
-def init_storage():
-    """Ensure temporary storage directories exist at runtime for Free Render deployment."""
-    try:
-        os.makedirs("/tmp/db", exist_ok=True)
-        os.makedirs("/tmp/documents", exist_ok=True)
-        logger.info("[STORAGE] Ensured /tmp/db and /tmp/documents exist.")
-    except OSError as e:
-        logger.warning(f"[STORAGE] Could not create storage dirs: {e}")
-
-
-def get_db_path() -> Path:
-    """Return the absolute path for FAISS Vector storage."""
-    return Path(settings.FAISS_DB_DIR)
-
-def get_documents_path() -> Path:
-    """Return the absolute path for uploaded PDF/text files."""
-    return Path(settings.DATA_DIR)
-
-def get_college_db_path(college_id: str) -> Path:
-    """Return the FAISS index folder for a specific college."""
-    return get_db_path() / college_id
-
-def get_college_data_path(college_id: str) -> Path:
-    """Return the raw-documents folder for a specific college."""
-    return get_documents_path() / college_id
+# ── Path helpers removed in favor of Supabase ────────────────────
 
 
 def validate_college_id(college_id: str) -> bool:

@@ -24,8 +24,8 @@ class Settings:
     """Centralised application settings."""
 
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
-    FAISS_DB_DIR: str = os.getenv("FAISS_DB_DIR", "/tmp/db")
-    DATA_DIR: str = os.getenv("DATA_DIR", "/tmp/documents")
+    SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
+    SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
     ALLOWED_ORIGINS: List[str] = os.getenv(
         "ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
     ).split(",")

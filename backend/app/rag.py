@@ -8,8 +8,6 @@ from typing import Any, Dict, List
 
 from app.config import settings
 from app.utils import (
-    get_college_db_path,
-    get_db_path,
     is_admission_related,
     REJECTION_RESPONSE,
     FALLBACK_RESPONSE,
@@ -115,54 +113,20 @@ async def query(college_id: str, question: str) -> Dict[str, Any]:
             "answered": False,
         }
 
-    # 2. Check memory cache or load the college's FAISS index.
-    db_path = get_college_db_path(college_id)
-    embeddings = _get_embeddings()
-
+    # 2. Check memory cache or load the college's FAISS index dynamically from Supabase.
     if college_id in _vectorstores_cache:
         logger.info(f"[RAG] Using cached FAISS index for {college_id}")
         vectorstore = _vectorstores_cache[college_id]
     else:
-        logger.info(f"[RAG] Loading FAISS index from disk for {college_id}")
+        logger.info(f"[RAG] Building FAISS index from Supabase for {college_id}")
+        from app.ingest import create_db
+        try:
+            vectorstore = await create_db(college_id=college_id)
+        except Exception as e:
+            logger.error(f"[RAG] Error creating DB from Supabase: {e}")
+            vectorstore = None
 
-        # Load from persistent storage
-        if not db_path.exists() or not (db_path / "index.faiss").exists():
-            logger.warning(f"[STORAGE ERROR] DB path missing ({db_path}). Attempting initialization.")
-            from app.ingest import create_db
-            try:
-                await create_db(path=str(get_db_path()), college_id=college_id)
-            except Exception as e:
-                logger.error(f"[RAG] Error creating DB: {e}")
-
-        # Check again if initialization succeeded
-        if db_path.exists() and (db_path / "index.faiss").exists():
-            try:
-                vectorstore = FAISS.load_local(
-                    str(db_path), embeddings, allow_dangerous_deserialization=True
-                )
-            except Exception as e:
-                logger.error(f"[RAG] Local FAISS file corrupted: {e}. Attempting clean rebuild...")
-                # Re-try entirely
-                from app.ingest import create_db, delete_college_index
-                logger.info(f"[STORAGE] Rebuilding DB automatically for {college_id}...")
-                delete_college_index(college_id)
-                try:
-                    await create_db(path=str(get_db_path()), college_id=college_id)
-                    if db_path.exists() and (db_path / "index.faiss").exists():
-                        vectorstore = FAISS.load_local(
-                            str(db_path), embeddings, allow_dangerous_deserialization=True
-                        )
-                        logger.info(f"[STORAGE] DB reloaded perfectly for {college_id}.")
-                    else:
-                        raise ValueError("Rebuild produced no data.")
-                except Exception as recreate_err:
-                    logger.error(f"[RAG] Error recreating DB: {recreate_err}")
-                    return {
-                        "answer": "Error loading admission data. Please contact the administration.",
-                        "sources": [],
-                        "answered": False,
-                    }
-        else:
+        if vectorstore is None:
              return {
                 "answer": "No admission data has been uploaded for this college yet. Please contact the administration.",
                 "sources": [],
@@ -204,6 +168,17 @@ async def query(college_id: str, question: str) -> Dict[str, Any]:
     lower_answer = answer_text.lower()
     if "contact the admission office" in lower_answer or "i don't have" in lower_answer:
         answered = False
+
+    # 6. Save to Supabase chat_logs optionally
+    try:
+        from app.supabase_client import supabase
+        if supabase:
+            supabase.table("chat_logs").insert({
+                "user_query": question,
+                "bot_response": answer_text
+            }).execute()
+    except Exception as e:
+        logger.warning(f"[RAG] Could not insert chat log: {e}")
 
     return {
         "answer": answer_text,

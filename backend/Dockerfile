@@ -8,8 +8,7 @@ RUN pip install --upgrade pip setuptools wheel && \
 
 COPY . .
 
-# Create temporary storage directories for free Render deployment
-RUN mkdir -p /tmp/db /tmp/documents
+# Supabase persistent storage replaces local volumes
 
 EXPOSE 10000
 
