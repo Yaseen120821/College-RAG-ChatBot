@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.11.9-slim
 
 WORKDIR /app
 
@@ -12,4 +12,4 @@ RUN mkdir -p /var/data/db /var/data/data
 
 EXPOSE 10000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "10000"]
+CMD sh -c "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-10000}"

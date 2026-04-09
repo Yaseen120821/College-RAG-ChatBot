@@ -103,9 +103,9 @@ class CollegeInfo(BaseModel):
 
 
 @app.get("/", tags=["System"])
-async def root():
+def root():
     """Root endpoint for Render port detection."""
-    return {"message": "Admission RAG Chatbot API is running"}
+    return {"status": "ok"}
 
 
 @app.get("/health", response_model=HealthResponse, tags=["System"])
