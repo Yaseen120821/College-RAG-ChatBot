@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import List
 from dotenv import load_dotenv
 
 # Load .env from backend root
