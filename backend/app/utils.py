@@ -37,23 +37,13 @@ def is_admission_related(question: str) -> bool:
 # ── Path helpers ─────────────────────────────────────────────────
 
 def init_storage():
-    """Ensure persistent storage directories exist at runtime.
-
-    On Render (Linux) this creates /var/data/*. On local dev (Windows)
-    this is a no-op — we fall back to a local ./db directory instead.
-    """
-    db_dir = settings.FAISS_DB_DIR
-    data_dir = settings.DATA_DIR
+    """Ensure temporary storage directories exist at runtime for Free Render deployment."""
     try:
-        os.makedirs(db_dir, exist_ok=True)
-        logger.info(f"[STORAGE] Ensured DB dir exists: {db_dir}")
+        os.makedirs("/tmp/db", exist_ok=True)
+        os.makedirs("/tmp/documents", exist_ok=True)
+        logger.info("[STORAGE] Ensured /tmp/db and /tmp/documents exist.")
     except OSError as e:
-        logger.warning(f"[STORAGE] Could not create DB dir '{db_dir}': {e}")
-    try:
-        os.makedirs(data_dir, exist_ok=True)
-        logger.info(f"[STORAGE] Ensured DATA dir exists: {data_dir}")
-    except OSError as e:
-        logger.warning(f"[STORAGE] Could not create DATA dir '{data_dir}': {e}")
+        logger.warning(f"[STORAGE] Could not create storage dirs: {e}")
 
 
 def get_db_path() -> Path:

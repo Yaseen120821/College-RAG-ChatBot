@@ -8,8 +8,8 @@ RUN pip install --upgrade pip setuptools wheel && \
 
 COPY . .
 
-# Create persistent storage directories
-RUN mkdir -p /var/data/db /var/data/documents
+# Create temporary storage directories for free Render deployment
+RUN mkdir -p /tmp/db /tmp/documents
 
 EXPOSE 10000
 

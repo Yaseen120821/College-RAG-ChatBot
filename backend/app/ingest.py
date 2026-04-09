@@ -175,10 +175,10 @@ def list_colleges() -> List[Dict[str, Any]]:
     return colleges
 
 
-async def create_db(path: str = "/var/data/db", college_id: str = "college_1"):
+async def create_db(path: str = "/tmp/db", college_id: str = "college_1"):
     """
     Intelligent initialization function. Checks if db exists.
-    If not, it checks `/var/data/documents` to perform automatic rebuild.
+    If not, it checks `backend/data/` to perform automatic rebuild.
     """
     logger.info(f"[STORAGE] DB Creation invoked for {college_id} at {path}")
     db_path = Path(path) / college_id
@@ -188,15 +188,23 @@ async def create_db(path: str = "/var/data/db", college_id: str = "college_1"):
 
     logger.info(f"[INIT] DB missing at {db_path}. Checking for existing documents...")
 
-    docs_path = get_college_data_path(college_id)
+    docs_path = Path(__file__).resolve().parent.parent / "data" / college_id
     if not docs_path.exists() or not list(docs_path.glob("*")):
         logger.warning(f"[INIT] No documents found in {docs_path}. Skipping automatic DB creation.")
         return
 
     logger.info(f"[INIT] Existing documents found in {docs_path}. Initiating automatic ingestion rebuild...")
 
-    # Loop over pre-existing files and ingest to bootstrap the index natively
+    target_docs_path = get_college_data_path(college_id)
+    target_docs_path.mkdir(parents=True, exist_ok=True)
+    
+    # Copy all files over so they are counted in /colleges
     for file_path in docs_path.glob("*"):
+        if file_path.is_file():
+            shutil.copy2(file_path, target_docs_path / file_path.name)
+
+    # Loop over copied files and ingest to bootstrap the index natively
+    for file_path in target_docs_path.glob("*"):
         if file_path.is_file():
             try:
                 # Need to read as bytes to pass through convenience ingest logic
