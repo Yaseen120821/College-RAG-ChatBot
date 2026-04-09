@@ -6,6 +6,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
+from typing import Dict, List, Optional, Any, Tuple
 
 from app.config import settings
 from app.utils import (
@@ -80,14 +81,14 @@ def _get_llm() -> ChatGoogleGenerativeAI:
 
 # ── Public API ──────────────────────────────────────────────────
 
-async def query(college_id: str, question: str) -> dict:
+async def query(college_id: str, question: str) -> Dict[str, Any]:
     """
     Run the RAG pipeline for a given college and question.
 
     Returns:
         {
             "answer": str,
-            "sources": list[str],
+            "sources": List[str],
             "answered": bool   # False if fallback/rejection
         }
     """

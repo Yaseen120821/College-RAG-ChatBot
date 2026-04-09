@@ -5,6 +5,7 @@ Application configuration — loads from environment variables.
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from typing import Dict, List, Optional, Any, Tuple
 
 # Load .env from backend root
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -16,7 +17,7 @@ class Settings:
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     FAISS_DB_DIR: str = os.getenv("FAISS_DB_DIR", "/var/data/db")
     DATA_DIR: str = os.getenv("DATA_DIR", "/var/data/data")
-    ALLOWED_ORIGINS: list[str] = os.getenv(
+    ALLOWED_ORIGINS: List[str] = os.getenv(
         "ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
     ).split(",")
 

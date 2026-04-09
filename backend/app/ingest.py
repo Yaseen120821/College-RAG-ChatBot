@@ -11,7 +11,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import List
+from typing import Dict, List, Optional, Any, Tuple
 
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_community.vectorstores import FAISS
@@ -145,7 +145,7 @@ def delete_college_index(college_id: str) -> bool:
     return deleted
 
 
-def list_colleges() -> List[dict]:
+def list_colleges() -> List[Dict[str, Any]]:
     """Return a list of colleges that have FAISS indices."""
     db_root = get_db_path()
     if not db_root.exists():
