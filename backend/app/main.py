@@ -102,6 +102,12 @@ class CollegeInfo(BaseModel):
 # ── Endpoints ───────────────────────────────────────────────────
 
 
+@app.get("/", tags=["System"])
+async def root():
+    """Root endpoint for Render port detection."""
+    return {"message": "Admission RAG Chatbot API is running"}
+
+
 @app.get("/health", response_model=HealthResponse, tags=["System"])
 async def health_check():
     """Return API health status."""
