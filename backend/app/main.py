@@ -71,8 +71,8 @@ app.add_middleware(
 
 
 class ChatRequest(BaseModel):
-    college_id: str = Field(..., min_length=1, max_length=64, examples=["college_1"])
-    question: str = Field(..., min_length=1, max_length=2000, examples=["What is the fee for B.Tech?"])
+    college_id: str = Field(..., min_length=1, max_length=64, example="college_1")
+    question: str = Field(..., min_length=1, max_length=2000, example="What is the fee for B.Tech?")
 
 
 class ChatResponse(BaseModel):
