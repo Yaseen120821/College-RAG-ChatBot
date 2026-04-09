@@ -1,12 +1,12 @@
 """
 RAG query engine — retrieval + Gemini LLM generation.
 """
+from __future__ import annotations
 
 from langchain_community.vectorstores import FAISS
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
-from typing import Dict, List, Optional, Any, Tuple
 
 from app.config import settings
 from app.utils import (

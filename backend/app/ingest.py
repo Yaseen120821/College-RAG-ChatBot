@@ -6,12 +6,12 @@ Flow:
   load with LangChain loaders → split into chunks →
   embed with Gemini → store/update FAISS index at db/{college_id}/
 """
+from __future__ import annotations
 
 import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
 
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_community.vectorstores import FAISS

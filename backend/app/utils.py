@@ -1,6 +1,7 @@
 """
 Utility functions — domain filtering, validation helpers.
 """
+from __future__ import annotations
 
 import re
 import os

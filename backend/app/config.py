@@ -1,11 +1,11 @@
 """
 Application configuration — loads from environment variables.
 """
+from __future__ import annotations
 
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-from typing import Dict, List, Optional, Any, Tuple
 
 # Load .env from backend root
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")

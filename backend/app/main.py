@@ -8,6 +8,7 @@ Endpoints:
   GET  /colleges  — List colleges with data
   GET  /health    — Health check
 """
+from __future__ import annotations
 
 import traceback
 import logging
@@ -16,7 +17,7 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from typing import Dict, List, Optional, Any, Tuple
+from typing import List
 
 from app.config import settings
 from app.rag import query as rag_query
