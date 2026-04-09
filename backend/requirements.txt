@@ -13,7 +13,9 @@ faiss-cpu==1.12.0
 # RAG pipeline
 langchain==0.1.20
 langchain-community==0.0.38
+langchain-core==0.1.53
 langchain-text-splitters==0.0.2
-langchain-google-genai==1.0.10
-google-generativeai
+langchain-google-genai==0.0.11
+google-generativeai==0.4.1
+
 pypdf
