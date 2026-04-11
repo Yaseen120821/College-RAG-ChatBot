@@ -1,16 +1,32 @@
-import os
+"""
+Supabase client initialisation.
+
+Reads SUPABASE_URL and SUPABASE_KEY from the environment (via config.settings).
+If either is missing, the client is set to None and a warning is logged.
+All modules must check `if supabase is None` before using the client.
+"""
+import logging
 from supabase import create_client, Client
 from app.config import settings
-import logging
 
 logger = logging.getLogger(__name__)
 
-url = settings.SUPABASE_URL
-key = settings.SUPABASE_KEY
+supabase: Client | None = None
 
-# Only create client if credentials exist, otherwise let the startup warn
-if url and key:
-    supabase: Client = create_client(url, key)
+_url = settings.SUPABASE_URL
+_key = settings.SUPABASE_KEY
+
+if _url and _key:
+    try:
+        supabase = create_client(_url, _key)
+        logger.info("[SUPABASE] Client initialized successfully.")
+    except Exception as e:
+        logger.error(f"[SUPABASE] Failed to create client: {e}")
+        supabase = None
 else:
-    logger.warning("[SUPABASE] SUPABASE_URL or SUPABASE_KEY is missing!")
-    supabase = None
+    missing = []
+    if not _url:
+        missing.append("SUPABASE_URL")
+    if not _key:
+        missing.append("SUPABASE_KEY")
+    logger.warning(f"[SUPABASE] Missing environment variable(s): {', '.join(missing)}. Client not initialized.")

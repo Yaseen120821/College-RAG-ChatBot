@@ -2,17 +2,19 @@
 FastAPI application — Admission RAG Chatbot Backend.
 
 Endpoints:
-  POST /chat      — Ask an admission question
-  POST /ingest    — Upload documents to a college's knowledge base
+  GET  /           — Root status check
+  GET  /docs-test  — Fetch all documents from Supabase
+  POST /chat       — Ask an admission question
+  POST /ingest     — Upload documents to a college's knowledge base
   DELETE /ingest/{college_id} — Remove a college's index
-  GET  /colleges  — List colleges with data
-  GET  /health    — Health check
+  GET  /colleges   — List colleges with data
+  GET  /health     — Health check
 """
 from __future__ import annotations
 
 import traceback
 import logging
-from typing import List
+from typing import Any, Dict, List
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,12 +41,22 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def startup_event():
-    """Build FAISS indexes in memory from Supabase on startup to avoid startup delays for the first user."""
-    from app.ingest import list_colleges, create_db
-    from app.rag import _vectorstores_cache
+    """Build FAISS indexes in memory from Supabase on startup (if FAISS is available)."""
+    logger.info("[STARTUP] Server initialization started.")
 
-    logger.info("[STARTUP] Initializing RAG memory cache from Supabase...")
+    # Validate Supabase credentials early
+    if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
+        logger.warning("[STARTUP] SUPABASE_URL or SUPABASE_KEY is missing! Supabase features will not work.")
+
+    if not settings.GEMINI_API_KEY:
+        logger.warning("[STARTUP] GEMINI_API_KEY is missing! LLM/Embedding calls will fail.")
+
+    # Attempt to pre-warm FAISS caches if the library is available
     try:
+        from app.ingest import list_colleges, create_db
+        from app.rag import _vectorstores_cache
+
+        logger.info("[STARTUP] Initializing RAG memory cache from Supabase...")
         colleges = list_colleges()
         if not colleges:
             logger.info("[STARTUP] No documents found in Supabase. Awaiting ingress.")
@@ -56,9 +68,13 @@ async def startup_event():
                 if vectorstore:
                     _vectorstores_cache[cid] = vectorstore
             logger.info("[STARTUP] RAG caching complete.")
+    except ImportError as e:
+        logger.warning(f"[STARTUP] FAISS/ML dependency not available, skipping pre-warm: {e}")
     except Exception as e:
         logger.error(f"[STARTUP] Startup initialization error: {e}")
         logger.error(traceback.format_exc())
+
+    logger.info("[STARTUP] Server initialization complete.")
 
 # ── CORS ────────────────────────────────────────────────────────
 
@@ -102,6 +118,30 @@ class CollegeInfo(BaseModel):
     doc_count: int
 
 
+# ── Reusable Supabase helpers ───────────────────────────────────
+
+
+def get_documents() -> List[Dict[str, Any]]:
+    """
+    Fetch all rows from the Supabase 'documents' table.
+    Returns a list of dicts. Raises RuntimeError on failure.
+    """
+    from app.supabase_client import supabase
+
+    if supabase is None:
+        raise RuntimeError(
+            "Supabase client is not initialized. "
+            "Ensure SUPABASE_URL and SUPABASE_KEY environment variables are set."
+        )
+
+    try:
+        response = supabase.table("documents").select("*").execute()
+        return response.data
+    except Exception as e:
+        logger.error(f"[SUPABASE] Failed to fetch documents: {e}")
+        raise RuntimeError(f"Supabase query failed: {str(e)}")
+
+
 # ── Endpoints ───────────────────────────────────────────────────
 
 
@@ -115,6 +155,51 @@ def root():
 async def health_check():
     """Return API health status."""
     return HealthResponse(status="ok", version="1.0.0")
+
+
+@app.get("/docs-test", tags=["Debug"])
+async def docs_test():
+    """
+    Debug endpoint — fetch all rows from the Supabase 'documents' table.
+    Returns the documents or a descriptive error message.
+    """
+    # Pre-flight: check that env vars are configured
+    if not settings.SUPABASE_URL:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "SUPABASE_URL environment variable is not set.",
+                "hint": "Set SUPABASE_URL in your Render environment or .env file.",
+            },
+        )
+    if not settings.SUPABASE_KEY:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "SUPABASE_KEY environment variable is not set.",
+                "hint": "Set SUPABASE_KEY in your Render environment or .env file.",
+            },
+        )
+
+    try:
+        documents = get_documents()
+        return {
+            "status": "success",
+            "count": len(documents),
+            "documents": documents,
+        }
+    except RuntimeError as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)},
+        )
+    except Exception as e:
+        logger.error(f"[DOCS-TEST] Unexpected error: {e}")
+        logger.error(traceback.format_exc())
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Unexpected server error: {str(e)}"},
+        )
 
 
 @app.post("/chat", response_model=ChatResponse, tags=["Chat"])
