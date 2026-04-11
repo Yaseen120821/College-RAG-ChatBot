@@ -171,12 +171,12 @@ async def query(college_id: str, question: str) -> Dict[str, Any]:
 
     # 6. Save to Supabase chat_logs optionally
     try:
-        from app.supabase_client import supabase
-        if supabase:
-            supabase.table("chat_logs").insert({
-                "user_query": question,
-                "bot_response": answer_text
-            }).execute()
+        from app.supabase_client import get_supabase
+        client = get_supabase()
+        client.table("chat_logs").insert({
+            "user_query": question,
+            "bot_response": answer_text
+        }).execute()
     except Exception as e:
         logger.warning(f"[RAG] Could not insert chat log: {e}")
 

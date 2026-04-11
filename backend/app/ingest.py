@@ -56,11 +56,10 @@ async def ingest_file(college_id: str, file_path: str, filename: str) -> int:
     Then invalidate memory cache.
     """
     from langchain_community.document_loaders import PyPDFLoader, TextLoader
-    from app.supabase_client import supabase
+    from app.supabase_client import get_supabase
     from app.rag import invalidate_cache
 
-    if not supabase:
-        raise ValueError("Supabase client not initialized. Check credentials.")
+    client = get_supabase()
 
     # Pick the correct loader
     ext = Path(filename).suffix.lower()
@@ -91,7 +90,7 @@ async def ingest_file(college_id: str, file_path: str, filename: str) -> int:
         })
 
     try:
-        res = supabase.table("documents").insert(rows_to_insert).execute()
+        res = client.table("documents").insert(rows_to_insert).execute()
         logger.info(f"[INGEST] Saved {len(res.data)} chunks to Supabase for {college_id}")
     except Exception as e:
         logger.error(f"[INGEST] Supabase insert failed: {e}")
@@ -121,17 +120,19 @@ async def ingest_uploaded_bytes(
 
 def delete_college_index(college_id: str) -> bool:
     """Remove a college's documents from Supabase and invalidate cache."""
-    from app.supabase_client import supabase
+    from app.supabase_client import get_supabase
     from app.rag import invalidate_cache
 
-    if not supabase:
-        logger.warning("[INGEST] Supabase client missing. Cannot delete.")
+    try:
+        client = get_supabase()
+    except RuntimeError as e:
+        logger.warning(f"[INGEST] Supabase client unavailable: {e}")
         return False
 
     logger.info(f"[INGEST] Deleting documents for college_id: {college_id}")
     try:
         # Note: metadata->>'college_id' is the jsonb extraction path.
-        res = supabase.table("documents").delete().eq("metadata->>college_id", college_id).execute()
+        res = client.table("documents").delete().eq("metadata->>college_id", college_id).execute()
         deleted_count = len(res.data)
         logger.info(f"[INGEST] Deleted {deleted_count} rows from Supabase.")
         invalidate_cache(college_id)
@@ -143,14 +144,16 @@ def delete_college_index(college_id: str) -> bool:
 
 def list_colleges() -> List[Dict[str, Any]]:
     """Return a list of colleges by aggregating documents in Supabase."""
-    from app.supabase_client import supabase
+    from app.supabase_client import get_supabase
 
-    if not supabase:
+    try:
+        client = get_supabase()
+    except RuntimeError:
         return []
 
     try:
         # Fetching specific fields to group manually
-        res = supabase.table("documents").select("metadata").execute()
+        res = client.table("documents").select("metadata").execute()
     except Exception as e:
         logger.error(f"[INGEST] Supabase select failed: {e}")
         return []
@@ -179,15 +182,17 @@ async def create_db(college_id: str = "college_1"):
     """
     from langchain_community.vectorstores import FAISS
     from langchain.docstore.document import Document
-    from app.supabase_client import supabase
+    from app.supabase_client import get_supabase
 
-    if not supabase:
-        logger.warning("[STORAGE] Supabase missing, cannot rebuild DB.")
+    try:
+        client = get_supabase()
+    except RuntimeError as e:
+        logger.warning(f"[STORAGE] Supabase unavailable, cannot rebuild DB: {e}")
         return None
 
     logger.info(f"[STORAGE] Fetching documents from Supabase for {college_id}")
     try:
-        res = supabase.table("documents").select("content, metadata").eq("metadata->>college_id", college_id).execute()
+        res = client.table("documents").select("content, metadata").eq("metadata->>college_id", college_id).execute()
     except Exception as e:
         logger.error(f"[STORAGE] Supabase select failed: {e}")
         return None

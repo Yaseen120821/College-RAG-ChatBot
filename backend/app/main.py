@@ -12,9 +12,15 @@ Endpoints:
 """
 from __future__ import annotations
 
+import os
 import traceback
 import logging
 from typing import Any, Dict, List
+
+# Ensure environment variables are loaded FIRST — before any other app import.
+# On Render the real env vars exist in the process; locally this loads .env.
+from dotenv import load_dotenv
+load_dotenv()
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -126,16 +132,12 @@ def get_documents() -> List[Dict[str, Any]]:
     Fetch all rows from the Supabase 'documents' table.
     Returns a list of dicts. Raises RuntimeError on failure.
     """
-    from app.supabase_client import supabase
+    from app.supabase_client import get_supabase
 
-    if supabase is None:
-        raise RuntimeError(
-            "Supabase client is not initialized. "
-            "Ensure SUPABASE_URL and SUPABASE_KEY environment variables are set."
-        )
+    client = get_supabase()   # raises RuntimeError if creds are missing
 
     try:
-        response = supabase.table("documents").select("*").execute()
+        response = client.table("documents").select("*").execute()
         return response.data
     except Exception as e:
         logger.error(f"[SUPABASE] Failed to fetch documents: {e}")
@@ -161,33 +163,33 @@ async def health_check():
 async def docs_test():
     """
     Debug endpoint — fetch all rows from the Supabase 'documents' table.
-    Returns the documents or a descriptive error message.
+    Returns {"data": [...]} on success or a descriptive JSON error.
     """
-    # Pre-flight: check that env vars are configured
-    if not settings.SUPABASE_URL:
+    # Pre-flight: check env vars are actually in the process environment.
+    # Read via os.getenv directly — this is exactly what Render exposes.
+    url = os.getenv("SUPABASE_URL", "")
+    key = os.getenv("SUPABASE_KEY", "")
+
+    if not url:
         return JSONResponse(
             status_code=503,
             content={
                 "error": "SUPABASE_URL environment variable is not set.",
-                "hint": "Set SUPABASE_URL in your Render environment or .env file.",
+                "hint": "Set SUPABASE_URL in the Render dashboard → Environment → Environment Variables.",
             },
         )
-    if not settings.SUPABASE_KEY:
+    if not key:
         return JSONResponse(
             status_code=503,
             content={
                 "error": "SUPABASE_KEY environment variable is not set.",
-                "hint": "Set SUPABASE_KEY in your Render environment or .env file.",
+                "hint": "Set SUPABASE_KEY in the Render dashboard → Environment → Environment Variables.",
             },
         )
 
     try:
         documents = get_documents()
-        return {
-            "status": "success",
-            "count": len(documents),
-            "documents": documents,
-        }
+        return {"data": documents}
     except RuntimeError as e:
         return JSONResponse(
             status_code=500,
@@ -200,6 +202,19 @@ async def docs_test():
             status_code=500,
             content={"error": f"Unexpected server error: {str(e)}"},
         )
+
+
+@app.get("/debug/env", tags=["Debug"])
+async def debug_env():
+    """
+    Show which critical environment variables are present (not their values).
+    Safe to expose — only shows True/False.
+    """
+    return {
+        "SUPABASE_URL_set": bool(os.getenv("SUPABASE_URL")),
+        "SUPABASE_KEY_set": bool(os.getenv("SUPABASE_KEY")),
+        "GEMINI_API_KEY_set": bool(os.getenv("GEMINI_API_KEY")),
+    }
 
 
 @app.post("/chat", response_model=ChatResponse, tags=["Chat"])
