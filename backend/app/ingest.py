@@ -56,10 +56,10 @@ async def ingest_file(college_id: str, file_path: str, filename: str) -> int:
     Then invalidate memory cache.
     """
     from langchain_community.document_loaders import PyPDFLoader, TextLoader
-    from app.supabase_client import get_supabase
+    from app.supabase_client import supabase
     from app.rag import invalidate_cache
 
-    client = get_supabase()
+    client = supabase
 
     # Pick the correct loader
     ext = Path(filename).suffix.lower()
@@ -120,11 +120,11 @@ async def ingest_uploaded_bytes(
 
 def delete_college_index(college_id: str) -> bool:
     """Remove a college's documents from Supabase and invalidate cache."""
-    from app.supabase_client import get_supabase
+    from app.supabase_client import supabase
     from app.rag import invalidate_cache
 
     try:
-        client = get_supabase()
+        client = supabase
     except RuntimeError as e:
         logger.warning(f"[INGEST] Supabase client unavailable: {e}")
         return False
@@ -144,10 +144,10 @@ def delete_college_index(college_id: str) -> bool:
 
 def list_colleges() -> List[Dict[str, Any]]:
     """Return a list of colleges by aggregating documents in Supabase."""
-    from app.supabase_client import get_supabase
+    from app.supabase_client import supabase
 
     try:
-        client = get_supabase()
+        client = supabase
     except RuntimeError:
         return []
 
@@ -182,10 +182,10 @@ async def create_db(college_id: str = "college_1"):
     """
     from langchain_community.vectorstores import FAISS
     from langchain.docstore.document import Document
-    from app.supabase_client import get_supabase
+    from app.supabase_client import supabase
 
     try:
-        client = get_supabase()
+        client = supabase
     except RuntimeError as e:
         logger.warning(f"[STORAGE] Supabase unavailable, cannot rebuild DB: {e}")
         return None

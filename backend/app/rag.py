@@ -171,8 +171,8 @@ async def query(college_id: str, question: str) -> Dict[str, Any]:
 
     # 6. Save to Supabase chat_logs optionally
     try:
-        from app.supabase_client import get_supabase
-        client = get_supabase()
+        from app.supabase_client import supabase
+        client = supabase
         client.table("chat_logs").insert({
             "user_query": question,
             "bot_response": answer_text

@@ -17,8 +17,6 @@ import traceback
 import logging
 from typing import Any, Dict, List
 
-# Ensure environment variables are loaded FIRST — before any other app import.
-# On Render the real env vars exist in the process; locally this loads .env.
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -30,6 +28,7 @@ from pydantic import BaseModel, Field
 # Safe imports — these modules are designed not to crash at import time
 from app.config import settings
 from app.utils import validate_college_id
+from app.supabase_client import supabase
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -94,7 +93,6 @@ app.add_middleware(
 
 # ── Schemas ─────────────────────────────────────────────────────
 
-
 class ChatRequest(BaseModel):
     college_id: str = Field(..., min_length=1, max_length=64)
     question: str = Field(..., min_length=1, max_length=2000)
@@ -124,28 +122,7 @@ class CollegeInfo(BaseModel):
     doc_count: int
 
 
-# ── Reusable Supabase helpers ───────────────────────────────────
-
-
-def get_documents() -> List[Dict[str, Any]]:
-    """
-    Fetch all rows from the Supabase 'documents' table.
-    Returns a list of dicts. Raises RuntimeError on failure.
-    """
-    from app.supabase_client import get_supabase
-
-    client = get_supabase()   # raises RuntimeError if creds are missing
-
-    try:
-        response = client.table("documents").select("*").execute()
-        return response.data
-    except Exception as e:
-        logger.error(f"[SUPABASE] Failed to fetch documents: {e}")
-        raise RuntimeError(f"Supabase query failed: {str(e)}")
-
-
 # ── Endpoints ───────────────────────────────────────────────────
-
 
 @app.get("/", tags=["System"])
 def root():
@@ -160,48 +137,13 @@ async def health_check():
 
 
 @app.get("/docs-test", tags=["Debug"])
-async def docs_test():
-    """
-    Debug endpoint — fetch all rows from the Supabase 'documents' table.
-    Returns {"data": [...]} on success or a descriptive JSON error.
-    """
-    # Pre-flight: check env vars are actually in the process environment.
-    # Read via os.getenv directly — this is exactly what Render exposes.
-    url = os.getenv("SUPABASE_URL", "")
-    key = os.getenv("SUPABASE_KEY", "")
-
-    if not url:
-        return JSONResponse(
-            status_code=503,
-            content={
-                "error": "SUPABASE_URL environment variable is not set.",
-                "hint": "Set SUPABASE_URL in the Render dashboard → Environment → Environment Variables.",
-            },
-        )
-    if not key:
-        return JSONResponse(
-            status_code=503,
-            content={
-                "error": "SUPABASE_KEY environment variable is not set.",
-                "hint": "Set SUPABASE_KEY in the Render dashboard → Environment → Environment Variables.",
-            },
-        )
-
+def test_supabase():
+    """Test endpoint requested for reading Supabase data directly."""
     try:
-        documents = get_documents()
-        return {"data": documents}
-    except RuntimeError as e:
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e)},
-        )
+        response = supabase.table("documents").select("*").execute()
+        return {"data": response.data}
     except Exception as e:
-        logger.error(f"[DOCS-TEST] Unexpected error: {e}")
-        logger.error(traceback.format_exc())
-        return JSONResponse(
-            status_code=500,
-            content={"error": f"Unexpected server error: {str(e)}"},
-        )
+        return {"error": str(e)}
 
 
 @app.get("/debug/env", tags=["Debug"])
